@@ -75,5 +75,6 @@ def mc_equity(hero, villain, board=(), n = 100000):
     need = 5 - len(board)
     e = equity_data = tally(hero, villain, board, (rng.sample(deck, need) for _ in range(n)))
     m = approximated_equity = e.equity
-    var = e.win * (1 - m) ** 2 + e.tie * (0.5 - m) ** 2 + e.lose * m ** 2
-    return e, math.sqrt(var / n)
+    #var = e.win * (1 - m) ** 2 + e.tie * (0.5 - m) ** 2 + e.lose * m ** 2
+    #std = math.sqrt(var / n)
+    return e
