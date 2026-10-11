@@ -61,6 +61,9 @@ def _build_tables():
     
     return straight_high, top5
 
+#Build and store the tables as global readable variables
+_STRAIGHT_HIGH, _TOP5 = _build_tables()
+
 def pack(ranks):
     #takes in (up to) 5 ranks individually and packs into one string, link in build table
     packed = 0
@@ -162,10 +165,9 @@ def evaluate(hand):
     #category 0 is high card
     return _TOP5[mask]
 
+"""
 #TESTING
 if __name__ == "__main__":
-    #Build and store the tables as global readable variables
-    _STRAIGHT_HIGH, _TOP5 = _build_tables()
     hand1 = cards(input())
     hand2 = cards(input())
 
@@ -180,4 +182,4 @@ if __name__ == "__main__":
         print("split the pot")
     else:
         print("player 2 won")
-    
+"""
