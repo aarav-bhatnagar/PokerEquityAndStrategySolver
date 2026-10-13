@@ -1,4 +1,5 @@
 #J, Q, K code 0, 1, 2
+from functools import lru_cache
 
 """
 Kuhn possible endings
@@ -90,3 +91,122 @@ stats = {"term": 0, "dec": 0, "inf": set(), "chance": 0}
 walk(g, g.initial(), stats)
 print(stats["term"], stats["dec"], len(stats["inf"]), stats["chance"])    # expect: 30 24 12 - check drawn diagram in readme
 """
+
+
+#LEDUC
+@lru_cache(maxsize=None)
+def analyse(hist):
+    #rnd, contrib[0], contrib[1], player, ended, folder, raises
+    contrib = [1,1] #where contrib[0] = money player 1 has put in and contrib[1] = money player 2 has put in
+    rnd, player, raises, acted = 0, 0, 0, 0
+    #rnd = betting round 0 or 1
+    #player = who's turn is next
+    #raises = raises made so far this round (capped at 2)
+    #acted = checks made this round
+
+    ended, folder = False, None
+
+    #loop through history
+    for ch in hist:
+        if ch == "/":
+            #End of round 1 so reset
+            rnd, player, raises, acted, ended = 1, 0, 0, 0, False
+            continue
+        facing = contrib[1 - player] > contrib[player]
+        if ch == "f":
+            #fold
+            ended, folder = True, player
+        elif ch == "c":
+            #call
+            if facing:
+                contrib[player] = contrib[1 - player]
+                ended = True
+            else:
+                acted += 1
+                ended = (acted == 2)
+        elif ch == "r":
+            contrib[player] = contrib[1 - player] + (2 if rnd == 0 else 4) #Increase contribution based on betting size of round
+            raises += 1
+        player = 1 - player
+
+    return rnd, contrib[0], contrib[1], player, ended, folder, raises
+
+class Leduc:
+    name = "Leduc"
+    DECK = [0, 0, 1, 1, 2, 2]
+    N_DEAL = 3
+
+    def initial(self):
+        return ((), "")
+
+    def is_chance(self, s):
+        #is false when time to act
+        cards, history = s
+        return len(cards) < 2 or (len(cards) == 2 and history.endswith("/"))
+
+    def chance_outcomes(self, s):
+        cards, history = s
+        counts = [2, 2, 2]
+        for c in cards:
+            counts[c] -= 1
+        total = sum(counts)
+        #returns list of tuples (next state, probability)
+        return [((cards + (r,), history), (counts[r] / total)) for r in range(3) if counts[r]]
+
+    def is_terminal(self, s):
+        cards, history = s
+        if history.endswith("/"):
+            #2 rounds,so if only first round has ended then not end of hand
+            return False
+
+        rnd, _, _, _, ended, folder, _ = analyse(history)
+        return folder is not None or (ended and rnd == 1)
+
+    def utility(self, s):
+        cards, history = s
+        rnd, c0, c1, _, ended, folder, _ = analyse(history)
+        if folder is not None:
+            #if folded, other person takes money
+            return -float(c0) if folder == 0 else float(c1)
+        p0, p1, pub = cards
+        #Compare hand at end with pair highest and then high card already 0, 1, 2
+        s0 = (10 if p0 == pub else 0) + p0
+        s1 = (10 if p1 == pub else 0) + p1
+        if s0 == s1:
+            return 0.0
+        #From player 0's perspective, if they win they take player 1's contribution.
+        #if they lose they lose their/player 0's contribution
+        return float(c1) if s0 > s1 else -float(c0)
+
+    def player(self, s):
+        return analyse(s[1])[3]
+
+    def actions(self, s):
+        #What are a playerss next available actions, c, f, r, check, call fold, raise
+        rnd, c0, c1, p, _, _, raises = analyse(s[1])
+        facing = (c1 > c0) if p == 0 else (c0 > c1)
+        acts = ["f", "c"] if facing else ["c"]
+        if raises < 2:
+            acts.append('r')
+        return acts
+
+    def child(self, s, a):
+        cards, history = s
+        newHistory = history + a
+        if a != "f":
+            rnd, _, _, _, ended, _, _ = analyse(newHistory)
+            if ended and rnd == 0:
+                newHistory += "/" #Add next round indicator
+        return (cards, newHistory)
+
+    def infoset(self, s):
+        cards, history = s
+        p = self.player(s) #Get acting player
+        pub = cards[2] if len(cards) == 3 else None
+        return (cards[p], pub, history)
+
+
+g = Leduc()
+stats = {"term": 0, "dec": 0, "inf": set(), "chance": 0}
+walk(g, g.initial(), stats)
+print(stats["term"], stats["dec"], len(stats["inf"]), stats["chance"])    # expect: 1116 774 288 - check drawn diagram in readme
