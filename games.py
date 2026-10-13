@@ -205,8 +205,9 @@ class Leduc:
         pub = cards[2] if len(cards) == 3 else None
         return (cards[p], pub, history)
 
-
+"""
 g = Leduc()
 stats = {"term": 0, "dec": 0, "inf": set(), "chance": 0}
 walk(g, g.initial(), stats)
-print(stats["term"], stats["dec"], len(stats["inf"]), stats["chance"])    # expect: 1116 774 288 - check drawn diagram in readme
+print(stats["term"], stats["dec"], len(stats["inf"]), stats["chance"])    # expect: 1116 774 288
+"""
