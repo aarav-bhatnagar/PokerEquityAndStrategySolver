@@ -1,3 +1,6 @@
+from collections import defaultdict
+from games import Kuhn, Leduc
+
 #cfr.py - counterfactual regret minimisation
 class Node:
     #Everything CFR remembers about one information set
@@ -85,11 +88,128 @@ class CFR:
         """{(player, infoset): {action: probability}}"""
         return {k: dict(zip(n.actions, n.average_strategy())) for k, n in self.nodes.items()}
 
+#TESTING
+
+def _probs(policy, key, actions):
+    d = policy.get(key)
+    if d is None:                       # infoset never reached in training
+        return {a: 1.0 / len(actions) for a in actions}
+    return d
+
+def expected_value(game, policy):
+    """Expected payoff to player 0 when both players follow `policy`."""
+    def rec(s):
+        if game.is_terminal(s):
+            return game.utility(s)
+        if game.is_chance(s):
+            return sum(p * rec(c) for c, p in game.chance_outcomes(s))
+        pr = _probs(policy, (game.player(s), game.infoset(s)), game.actions(s))
+        return sum(pr[a] * rec(game.child(s, a)) for a in game.actions(s))
+    return rec(game.initial())
+
+def best_response_value(game, policy, br_player):
+    members = defaultdict(list)          # infoset -> [(state, weight)]
+
+    def collect(s, w):                   # pass 1
+        if game.is_terminal(s):
+            return
+        if game.is_chance(s):
+            for c, p in game.chance_outcomes(s):
+                collect(c, w * p)
+            return
+        p = game.player(s)
+        acts = game.actions(s)
+        if p == br_player:
+            members[game.infoset(s)].append((s, w))
+            for a in acts:
+                collect(game.child(s, a), w)
+        else:
+            pr = _probs(policy, (p, game.infoset(s)), acts)
+            for a in acts:
+                collect(game.child(s, a), w * pr[a])
+
+    collect(game.initial(), 1.0)
+
+    sign = 1.0 if br_player == 0 else -1.0
+    best_action, val_cache = {}, {}
+
+    def value(s):                        # pass 2
+        if s in val_cache:
+            return val_cache[s]
+        if game.is_terminal(s):
+            v = sign * game.utility(s)
+        elif game.is_chance(s):
+            v = sum(p * value(c) for c, p in game.chance_outcomes(s))
+        else:
+            p = game.player(s)
+            acts = game.actions(s)
+            if p == br_player:
+                v = value(game.child(s, choose(game.infoset(s))))
+            else:
+                pr = _probs(policy, (p, game.infoset(s)), acts)
+                v = sum(pr[a] * value(game.child(s, a)) for a in acts)
+        val_cache[s] = v
+        return v
+
+    def choose(key):
+        if key in best_action:
+            return best_action[key]
+        states = members[key]
+        best, best_v = None, float("-inf")
+        for act in game.actions(states[0][0]):
+            tot = sum(w * value(game.child(s, act)) for s, w in states)
+            if tot > best_v + 1e-12:
+                best, best_v = act, tot
+        best_action[key] = best
+        return best
+
+    return value(game.initial())
+
+def exploitability(game, policy):
+    return (best_response_value(game, policy, 0) +
+            best_response_value(game, policy, 1)) / 2.0
+
+def uniform_policy(game):
+    """Uniform-random policy over every infoset (built by walking the whole tree)."""
+    pol = {}
+
+    def walk(s):
+        if game.is_terminal(s):
+            return
+        if game.is_chance(s):
+            for c, _ in game.chance_outcomes(s):
+                walk(c)
+            return
+        acts = game.actions(s)
+        key = (game.player(s), game.infoset(s))
+        if key not in pol:
+            pol[key] = {a: 1.0 / len(acts) for a in acts}
+        for a in acts:
+            walk(game.child(s, a))
+
+    walk(game.initial())
+    return pol
+
 if __name__ == "__main__":
-    from games import Kuhn, Leduc
+    #Explotability is how many chips per hand a perfect opponent could win against your strategy, on average
+    #Expected payoff per hand when both player's follow strategy
+    g = Leduc()
+    for T in (1000, 2000, 5000, 10000, 20000):
+        s = CFR(Leduc(), plus=True); s.run(T)
+        print(T, exploitability(Leduc(), s.average_policy()))
+
+    """
+    g = Kuhn()
+    s = CFR(g, plus=True); s.run(2000)
+    p = s.average_policy()
+    print(exploitability(g, p), expected_value(g, p))
+    """
+
+    """
     solver = CFR(Leduc(), plus=True)   # plus=False is vanilla CFR
     solver.run(20000)
 
     policy = solver.average_policy()
     for key in sorted(policy, key=str):
         print(key, {a: round(p, 3) for a, p in policy[key].items()})
+    """
